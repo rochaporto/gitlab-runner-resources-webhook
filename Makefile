@@ -92,10 +92,6 @@ checksum:
 		shasum -a 256 "$${f}"  | awk '{print $$1}' > "$${f}.sha256" ; \
 	done
 
-.PHONY: changelog
-changelog:
-	@./scripts/changelog.sh
-
 # ------------------------------------------------------------------------------
 #  docker
 DOCKER_TAG=${GIT_BRANCH}
