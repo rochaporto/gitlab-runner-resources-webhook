@@ -1,22 +1,23 @@
-apiVersion: admissionregistration.k8s.io/v1beta1
+apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: gitlab-resources-webhook
-  labels:
-    app: gitlab-resources-webhook
+  name: gitlab-resources-webhook.gitlab.com
 webhooks:
   - name: gitlab-resources-webhook.gitlab.com
     clientConfig:
       service:
         name: gitlab-resources-webhook
-        namespace: default
+        namespace: gitlab
         path: "/mutate"
-      caBundle: ${CA_BUNDLE}
     rules:
       - operations: [ "CREATE" ]
         apiGroups: ["apps", ""]
         apiVersions: ["v1"]
         resources: ["pods"]
-    namespaceSelector:
+        scope: "Namespaced"
+    objectSelector:
       matchLabels:
-        gitlab-resources-webhook: enabled
+        gpu: "true"
+    admissionReviewVersions: ["v1", "v1beta1"]
+    sideEffects: None
+    timeoutSeconds: 10
