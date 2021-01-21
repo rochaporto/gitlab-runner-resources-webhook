@@ -24,12 +24,10 @@ label for pods that should trigger the webhook. The value is preset to `gpu=true
 but you can change this to whatever pod_labels you have in your runner config
 - which should look something like this:
 ```toml
-runners:
-  config: |
-    [[runners]]
-      [runners.kubernetes]
-        image = "ubuntu:16.04"
-        namespace_overwrite_allowed = ""
-        [runners.kubernetes.pod_labels]
-          gpu = "true"
+[[runners]]
+  [runners.kubernetes]
+    image = "ubuntu:16.04"
+    namespace_overwrite_allowed = ""
+    [runners.kubernetes.pod_labels]
+      gpu = "true"
 ```
