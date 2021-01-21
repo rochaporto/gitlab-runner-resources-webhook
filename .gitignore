@@ -1,0 +1,8 @@
+*.swp
+*.swo
+.coverage/
+_dist/
+bin/
+CHANGELOG.md
+go.sum
+vendor/
