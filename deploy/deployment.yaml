@@ -14,16 +14,13 @@ spec:
       labels:
         app: gitlab-resources-webhook
     spec:
-      serviceAccount: gitlab-resources-webhook
       containers:
         - name: gitlab-resources-webhook
-          image: rochaporto/gitlab-resources-webhook:latest
+          image: rochaporto/gitlab-resources-webhook:v0.1
           imagePullPolicy: Always
           args:
-            - -tlsCertFile=/etc/webhook/certs/cert.pem
-            - -tlsKeyFile=/etc/webhook/certs/key.pem
-            - -alsologtostderr
-            - -v=4
+            - -tlsCertFile=/etc/webhook/certs/tls.crt
+            - -tlsKeyFile=/etc/webhook/certs/tls.key
             - 2>&1
           volumeMounts:
             - name: webhook-certs
@@ -32,4 +29,4 @@ spec:
       volumes:
         - name: webhook-certs
           secret:
-            secretName: gitlab-resources-webhook-certs
+            secretName: gitlab-resources-webhook
