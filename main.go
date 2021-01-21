@@ -6,18 +6,18 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"k8s.io/api/admission/v1beta1"
+	admissionv1 "k8s.io/api/admission/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
-
-	"github.com/golang/glog"
 )
 
 var (
@@ -37,7 +37,7 @@ func main() {
 
 	pair, err := tls.LoadX509KeyPair(params.certFile, params.keyFile)
 	if err != nil {
-		glog.Errorf("Failed to load key pair: %v", err)
+		fmt.Printf("Failed to load key pair: %v\n", err)
 	}
 
 	whsvr := &WebhookServer{
@@ -49,25 +49,24 @@ func main() {
 
 	// define http server and server handler
 	mux := http.NewServeMux()
-	mux.HandleFunc("/mutate", whsvr.serve)
-	mux.HandleFunc("/validate", whsvr.serve)
+	mux.HandleFunc("/mutate", whsvr.mutate)
 	whsvr.server.Handler = mux
 
 	// start webhook server in new routine
 	go func() {
 		if err := whsvr.server.ListenAndServeTLS("", ""); err != nil {
-			glog.Errorf("Failed to listen and serve webhook server: %v", err)
+			fmt.Printf("Failed to listen and serve webhook server: %v\n", err)
 		}
 	}()
 
-	glog.Info("Server started")
+	fmt.Printf("Server started. Listening on %v\n", params.port)
 
 	// listening OS shutdown singal
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 	<-signalChan
 
-	glog.Infof("Got OS shutdown signal, shutting down webhook server gracefully...")
+	fmt.Printf("Got OS shutdown signal, shutting down webhook server gracefully...\n")
 	whsvr.server.Shutdown(context.Background())
 }
 
@@ -82,61 +81,91 @@ type WebhookParams struct {
 	keyFile  string
 }
 
-func (wh *WebhookServer) mutate(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResponse {
-	return &v1beta1.AdmissionResponse{}
+func (wh *WebhookServer) mutate(w http.ResponseWriter, r *http.Request) {
+
+	admReview := &admissionv1.AdmissionReview{}
+
+	// read the AdmissionReview from the request json body
+	err := json.NewDecoder(r.Body).Decode(admReview)
+	if err != nil {
+		fmt.Printf("invalid JSON input\n")
+		http.Error(w, fmt.Sprintf("invalid JSON input"), http.StatusInternalServerError)
+		return
+	}
+
+	// unmarshal the pod from the AdmissionRequest
+	pod := &corev1.Pod{}
+	if err := json.Unmarshal(admReview.Request.Object.Raw, pod); err != nil {
+		fmt.Printf("failed to unmarshal to pod: %v", err)
+		http.Error(w, fmt.Sprintf("failed to unmarshal to pod: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// add resources request
+	for i := 0; i < len(pod.Spec.Containers); i++ {
+		if pod.Spec.Containers[i].Name == "build" {
+			pod.Spec.Containers[i].Resources.Limits = corev1.ResourceList{
+				"nvidia.com/gpu": resource.MustParse("1"),
+			}
+		}
+	}
+
+	cBytes, err := json.Marshal(&pod.Spec.Containers)
+	if err != nil {
+		fmt.Printf("failed to marshall container: %v", err)
+		http.Error(w, fmt.Sprintf("failed to marshall container: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// build json patch
+	patch := []JSONPatchEntry{
+		JSONPatchEntry{
+			OP:    "replace",
+			Path:  "/spec/containers",
+			Value: cBytes,
+		},
+	}
+
+	patchBytes, err := json.Marshal(&patch)
+	if err != nil {
+		fmt.Printf("failed to marshall jsonpatch: %v\n", err)
+		http.Error(w, fmt.Sprintf("failed to marshall jsonpatch: %v", err), http.StatusInternalServerError)
+	}
+
+	patchType := admissionv1.PatchTypeJSONPatch
+
+	// build admission response
+	admResponse := &admissionv1.AdmissionResponse{
+		UID:       admReview.Request.UID,
+		Allowed:   true,
+		Patch:     patchBytes,
+		PatchType: &patchType,
+	}
+
+	respAdmissionReview := &admissionv1.AdmissionReview{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "AdmissionReview",
+			APIVersion: "admission.k8s.io/v1",
+		},
+		Response: admResponse,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	b, err := json.Marshal(&respAdmissionReview)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("json encoding error: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = w.Write(b)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("write error: %v", err), http.StatusInternalServerError)
+		return
+	}
 }
 
-func (wh *WebhookServer) serve(w http.ResponseWriter, r *http.Request) {
-
-	var body []byte
-	if r.Body != nil {
-		if data, err := ioutil.ReadAll(r.Body); err == nil {
-			body = data
-		}
-	}
-	if len(body) == 0 {
-		glog.Error("empty body")
-		http.Error(w, "empty body", http.StatusBadRequest)
-		return
-	}
-
-	// verify the content type is accurate
-	contentType := r.Header.Get("Content-Type")
-	if contentType != "application/json" {
-		glog.Errorf("Content-Type=%s, expect application/json", contentType)
-		http.Error(w, "invalid Content-Type, expect `application/json`", http.StatusUnsupportedMediaType)
-		return
-	}
-
-	var admissionResponse *v1beta1.AdmissionResponse
-	ar := v1beta1.AdmissionReview{}
-	if _, _, err := deserializer.Decode(body, nil, &ar); err != nil {
-		glog.Errorf("Can't decode body: %v", err)
-		admissionResponse = &v1beta1.AdmissionResponse{
-			Result: &metav1.Status{
-				Message: err.Error(),
-			},
-		}
-	} else {
-		admissionResponse = wh.mutate(&ar)
-	}
-
-	admissionReview := v1beta1.AdmissionReview{}
-	if admissionResponse != nil {
-		admissionReview.Response = admissionResponse
-		if ar.Request != nil {
-			admissionReview.Response.UID = ar.Request.UID
-		}
-	}
-
-	resp, err := json.Marshal(admissionReview)
-	if err != nil {
-		glog.Errorf("Can't encode response: %v", err)
-		http.Error(w, fmt.Sprintf("could not encode response: %v", err), http.StatusInternalServerError)
-	}
-	glog.Infof("Ready to write reponse ...")
-	if _, err := w.Write(resp); err != nil {
-		glog.Errorf("Can't write response: %v", err)
-		http.Error(w, fmt.Sprintf("could not write response: %v", err), http.StatusInternalServerError)
-	}
+type JSONPatchEntry struct {
+	OP    string          `json:"op"`
+	Path  string          `json:"path"`
+	Value json.RawMessage `json:"value,omitempty"`
 }
