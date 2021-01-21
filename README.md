@@ -21,8 +21,8 @@ the MutatingWebhookConfiguration and the ServiceAccount in the Job
 definition 
 * The objectSelector in the MutatingWebhookConfiguration sets the expected
 label for pods that should trigger the webhook. The value is preset to `gpu=true`
-but you can change this to whatever pod_labels you have in your runner config
-- which should look something like this:
+but you can change this to whatever pod_labels you have in your runner config -
+which should look something like this:
 ```toml
 [[runners]]
   [runners.kubernetes]
