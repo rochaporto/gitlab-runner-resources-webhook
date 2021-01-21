@@ -1,0 +1,47 @@
+name: gitlab-resources-webhook
+
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - 'v*'
+    paths-ignore:
+      - 'README.md'
+jobs:
+  build:
+    name: Build binaries
+    runs-on: ubuntu-latest
+    env:
+      GOVER: 1.13.3
+      GOPROXY: https://proxy.golang.org
+    steps:
+      - name: Set up Go ${{ env.GOVER }}
+        uses: actions/setup-go@v1
+        with:
+          go-version: ${{ env.GOVER }}
+      - name: Install golangci-lint
+        if: matrix.target_arch != 'arm'
+        run: |
+          curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "${{ env.GOROOT }}/bin" v1.21.0
+      - name: Check out code
+        uses: actions/checkout@v1
+      - name: Make build for cross platform binaries
+        run: |
+          make build-cross
+      - name: Release cross platform binaries
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: |
+            _dist/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build docker images
+        run: |
+          make docker
+      - name: Push docker images
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          sudo docker login -u ${{ secrets.DOCKER_REGISTRY_ID }} -p ${{ secrets.DOCKER_REGISTRY_PASS }}
+          make docker-push
