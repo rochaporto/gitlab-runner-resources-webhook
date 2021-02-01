@@ -101,11 +101,11 @@ endif
 
 .PHONY: docker
 docker: build-cross
-	sudo docker build -t rochaporto/gitlab-resources-webhook:${DOCKER_TAG} -f Dockerfile .
+	docker build -t rochaporto/gitlab-resources-webhook:${DOCKER_TAG} -f Dockerfile .
 
 .PHONY: docker-push
 docker-push: docker 
-	sudo docker push rochaporto/gitlab-resources-webhook:${DOCKER_TAG}
+	docker push rochaporto/gitlab-resources-webhook:${DOCKER_TAG}
 
 # ------------------------------------------------------------------------------
 .PHONY: clean
