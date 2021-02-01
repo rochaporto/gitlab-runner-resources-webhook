@@ -102,6 +102,8 @@ func (wh *WebhookServer) mutate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Printf("processing pod %v\n", pod.ObjectMeta.Name)
+	fmt.Printf("pod '%v' has annotations '%v'\n", pod.ObjectMeta.Name, pod.ObjectMeta.Annotations)
 	// add resources
 	for i := 0; i < len(pod.Spec.Containers); i++ {
 		if pod.Spec.Containers[i].Name == "build" {
@@ -110,6 +112,8 @@ func (wh *WebhookServer) mutate(w http.ResponseWriter, r *http.Request) {
 				pod.Spec.Containers[i].Resources.Limits = corev1.ResourceList{
 					corev1.ResourceName(res[0]): resource.MustParse(res[1]),
 				}
+			} else {
+				fmt.Printf("pod '%v' has no gitlab-runner-resources annotation\n", pod.ObjectMeta.Name)
 			}
 		}
 	}
