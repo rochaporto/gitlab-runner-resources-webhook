@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	admissionv1 "k8s.io/api/admission/v1"
@@ -101,11 +102,14 @@ func (wh *WebhookServer) mutate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// add resources request
+	// add resources
 	for i := 0; i < len(pod.Spec.Containers); i++ {
 		if pod.Spec.Containers[i].Name == "build" {
-			pod.Spec.Containers[i].Resources.Limits = corev1.ResourceList{
-				"nvidia.com/gpu": resource.MustParse("1"),
+			if val, ok := pod.ObjectMeta.Annotations["gitlab-runner-resources"]; ok {
+				res := strings.Split(val, "=")
+				pod.Spec.Containers[i].Resources.Limits = corev1.ResourceList{
+					corev1.ResourceName(res[0]): resource.MustParse(res[1]),
+				}
 			}
 		}
 	}

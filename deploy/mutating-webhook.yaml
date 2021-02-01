@@ -17,7 +17,7 @@ webhooks:
         scope: "Namespaced"
     objectSelector:
       matchLabels:
-        gpu: "true"
+        gitlab-runner-resources-webhook: "true"
     admissionReviewVersions: ["v1", "v1beta1"]
     sideEffects: None
     timeoutSeconds: 10
